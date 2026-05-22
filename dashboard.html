@@ -5,279 +5,205 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Black Screen — Device Tracker</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #0a0f1e;
-    color: #e2e8f0;
-    font-family: 'Segoe UI', sans-serif;
-    min-height: 100vh;
-  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0a0f1e;color:#e2e8f0;font-family:'Segoe UI',sans-serif;min-height:100vh}
+  .header{background:#0f172a;border-bottom:1px solid #22c55e33;padding:16px 28px;display:flex;align-items:center;justify-content:space-between}
+  .header h1{color:#22c55e;font-size:18px}
+  .header span{color:#475569;font-size:12px}
+  .stats{display:flex;gap:14px;padding:20px 28px 0}
+  .card{background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:16px 20px;flex:1;text-align:center}
+  .card .num{font-size:30px;font-weight:700;color:#22c55e}
+  .card .lbl{font-size:11px;color:#64748b;margin-top:3px}
+  .section{padding:20px 28px}
+  .section h2{color:#22c55e;font-size:13px;font-weight:700;margin-bottom:12px;letter-spacing:.5px}
 
-  /* ── Header ── */
-  .header {
-    background: linear-gradient(135deg, #0f172a, #1e293b);
-    border-bottom: 1px solid #22c55e33;
-    padding: 18px 30px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .header h1 { color: #22c55e; font-size: 20px; }
-  .header span { color: #64748b; font-size: 13px; }
+  /* User accordion */
+  .user-block{background:#0f172a;border:1px solid #1e293b;border-radius:10px;margin-bottom:10px;overflow:hidden}
+  .user-header{display:flex;align-items:center;padding:13px 16px;cursor:pointer;transition:background .15s}
+  .user-header:hover{background:#1e293b}
+  .user-avatar{width:34px;height:34px;border-radius:50%;background:#22c55e22;border:2px solid #22c55e55;display:flex;align-items:center;justify-content:center;font-size:16px;margin-right:12px;flex-shrink:0}
+  .user-name{font-weight:700;color:#f1f5f9;font-size:14px}
+  .user-meta{color:#64748b;font-size:11px;margin-top:2px}
+  .pc-count{margin-left:auto;background:#22c55e22;color:#22c55e;border:1px solid #22c55e44;padding:3px 12px;border-radius:99px;font-size:12px;font-weight:700}
+  .chevron{color:#64748b;margin-left:10px;transition:transform .2s;font-size:12px}
+  .chevron.open{transform:rotate(90deg)}
 
-  /* ── Stats cards ── */
-  .stats {
-    display: flex;
-    gap: 16px;
-    padding: 24px 30px 0;
-  }
-  .card {
-    background: #0f172a;
-    border: 1px solid #1e293b;
-    border-radius: 10px;
-    padding: 18px 24px;
-    flex: 1;
-    text-align: center;
-  }
-  .card .num  { font-size: 32px; font-weight: bold; color: #22c55e; }
-  .card .lbl  { font-size: 12px; color: #64748b; margin-top: 4px; }
+  /* PC table */
+  .pc-table{display:none;padding:0 16px 14px}
+  .pc-table.open{display:block}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  thead th{color:#94a3b8;padding:8px 10px;text-align:left;border-bottom:1px solid #1e293b;font-weight:600}
+  tbody tr{border-bottom:1px solid #1e293b88;transition:background .1s}
+  tbody tr:last-child{border-bottom:none}
+  tbody tr:hover{background:#1e293b55}
+  tbody td{padding:9px 10px;color:#cbd5e1}
+  .badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700}
+  .bd{background:#166534;color:#86efac}
+  .in{background:#5b21b6;color:#c4b5fd}
+  .us{background:#1d4ed8;color:#93c5fd}
+  .xx{background:#1e293b;color:#64748b}
 
-  /* ── Table ── */
-  .table-wrap {
-    padding: 24px 30px;
-    overflow-x: auto;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-  thead th {
-    background: #0f172a;
-    color: #22c55e;
-    padding: 12px 14px;
-    text-align: left;
-    font-weight: 600;
-    border-bottom: 1px solid #22c55e44;
-    white-space: nowrap;
-  }
-  tbody tr {
-    border-bottom: 1px solid #1e293b;
-    transition: background .15s;
-  }
-  tbody tr:hover { background: #1e293b; }
-  tbody td {
-    padding: 11px 14px;
-    color: #cbd5e1;
-    white-space: nowrap;
-  }
-  .badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 99px;
-    font-size: 11px;
-    font-weight: 600;
-  }
-  .badge-bd  { background: #166534; color: #86efac; }
-  .badge-in  { background: #7c3aed; color: #c4b5fd; }
-  .badge-us  { background: #1d4ed8; color: #93c5fd; }
-  .badge-def { background: #374151; color: #9ca3af; }
-
-  /* ── Toolbar ── */
-  .toolbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 0 30px 16px;
-  }
-  input[type=text] {
-    background: #0f172a;
-    border: 1px solid #1e293b;
-    color: #e2e8f0;
-    padding: 8px 14px;
-    border-radius: 7px;
-    font-size: 13px;
-    width: 260px;
-    outline: none;
-  }
-  input[type=text]:focus { border-color: #22c55e; }
-  button {
-    background: #22c55e;
-    color: #000;
-    border: none;
-    padding: 8px 18px;
-    border-radius: 7px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  button:hover { background: #16a34a; }
-  .btn-del {
-    background: #dc2626;
-    color: #fff;
-  }
-  .btn-del:hover { background: #b91c1c; }
-
-  .status {
-    color: #64748b;
-    font-size: 12px;
-    margin-left: auto;
-  }
-  .live-dot {
-    display: inline-block;
-    width: 8px; height: 8px;
-    background: #22c55e;
-    border-radius: 50%;
-    margin-right: 5px;
-    animation: pulse 1.5s infinite;
-  }
-  @keyframes pulse {
-    0%,100% { opacity: 1; }
-    50%      { opacity: .3; }
-  }
-
-  .empty {
-    text-align: center;
-    color: #334155;
-    padding: 60px;
-    font-size: 14px;
-  }
+  .toolbar{display:flex;gap:10px;padding:0 28px 16px;align-items:center}
+  input{background:#0f172a;border:1px solid #1e293b;color:#e2e8f0;padding:7px 12px;border-radius:7px;font-size:12px;width:240px;outline:none}
+  input:focus{border-color:#22c55e}
+  button{background:#22c55e;color:#000;border:none;padding:7px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
+  button:hover{background:#16a34a}
+  .dot{display:inline-block;width:7px;height:7px;background:#22c55e;border-radius:50%;margin-right:5px;animation:pulse 1.5s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .last{color:#475569;font-size:11px;margin-left:auto}
+  .empty{text-align:center;color:#334155;padding:40px;font-size:13px}
 </style>
 </head>
 <body>
 
 <div class="header">
-  <h1>🖥️ Black Screen — Device Tracker</h1>
-  <span id="lastUpdate">Last update: —</span>
+  <h1>🖥️ Black Screen — User & Device Tracker</h1>
+  <span id="lastUp">—</span>
 </div>
 
 <div class="stats">
-  <div class="card">
-    <div class="num" id="totalCount">0</div>
-    <div class="lbl">Total Devices</div>
-  </div>
-  <div class="card">
-    <div class="num" id="countryCount">0</div>
-    <div class="lbl">Countries</div>
-  </div>
-  <div class="card">
-    <div class="num" id="todayCount">0</div>
-    <div class="lbl">Today</div>
-  </div>
-  <div class="card">
-    <div class="num" id="uniqueIp">0</div>
-    <div class="lbl">Unique IPs</div>
-  </div>
+  <div class="card"><div class="num" id="cUser">0</div><div class="lbl">Total Users</div></div>
+  <div class="card"><div class="num" id="cPc">0</div><div class="lbl">Total Unique PCs</div></div>
+  <div class="card"><div class="num" id="cCountry">0</div><div class="lbl">Countries</div></div>
+  <div class="card"><div class="num" id="cToday">0</div><div class="lbl">Today's Logins</div></div>
 </div>
 
-<div class="table-wrap">
+<div class="section">
   <div class="toolbar">
-    <input type="text" id="search" placeholder="🔍  PC name, IP, country..." oninput="filterTable()">
-    <button onclick="loadData()">🔄 Refresh</button>
-    <span class="status"><span class="live-dot"></span>Live</span>
+    <input id="search" placeholder="🔍  user, PC, IP, country..." oninput="render()">
+    <button onclick="load()">🔄 Refresh</button>
+    <span class="last"><span class="dot"></span>Auto refresh 30s &nbsp;|&nbsp; <span id="lastUp2">—</span></span>
   </div>
 
-  <table id="devTable">
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>PC Name</th>
-        <th>Username</th>
-        <th>IP Address</th>
-        <th>Country</th>
-        <th>City</th>
-        <th>ISP / Org</th>
-        <th>Date & Time</th>
-      </tr>
-    </thead>
-    <tbody id="tbody">
-      <tr><td colspan="8" class="empty">Loading...</td></tr>
-    </tbody>
-  </table>
+  <h2>👤 USER — PC LIST</h2>
+  <div id="userList"><div class="empty">Loading...</div></div>
 </div>
 
 <script>
-// ════════════════════════════════════════════════════
-// ★ আপনার Firebase URL এখানে বসান ★
-const FIREBASE_URL = "https://test-mode-60dd1-default-rtdb.firebaseio.com";
-// ════════════════════════════════════════════════════
+const FB = "https://test-mode-60dd1-default-rtdb.firebaseio.com";
+let data = {};
 
-let allRows = [];
-
-async function loadData() {
+async function load() {
   try {
-    const res  = await fetch(FIREBASE_URL + "/devices.json");
-    const data = await res.json();
-    if (!data) { renderEmpty(); return; }
-
-    allRows = Object.values(data);
-    renderTable(allRows);
-    updateStats(allRows);
-
-    document.getElementById('lastUpdate').textContent =
-      'Last update: ' + new Date().toLocaleTimeString();
+    const r = await fetch(FB + "/logins.json");
+    data = await r.json() || {};
+    render();
+    const t = new Date().toLocaleTimeString();
+    document.getElementById('lastUp').textContent  = 'Last: ' + t;
+    document.getElementById('lastUp2').textContent = t;
+    updateStats();
   } catch(e) {
-    document.getElementById('tbody').innerHTML =
-      '<tr><td colspan="8" class="empty">❌ Firebase connection error.<br>Check your FIREBASE_URL.</td></tr>';
+    document.getElementById('userList').innerHTML = '<div class="empty">❌ Connection error</div>';
   }
 }
 
-function renderTable(rows) {
-  const tbody = document.getElementById('tbody');
-  if (!rows.length) { renderEmpty(); return; }
+function updateStats() {
+  const users   = Object.keys(data);
+  let totalPc   = 0, countries = new Set(), today = 0;
+  const todayStr = new Date().toISOString().slice(0,10);
 
-  tbody.innerHTML = rows.map((r, i) => `
-    <tr>
-      <td>${i + 1}</td>
-      <td>💻 ${r.pcName   || '—'}</td>
-      <td>👤 ${r.userName || '—'}</td>
-      <td>🌐 ${r.ip       || '—'}</td>
-      <td><span class="badge ${badgeClass(r.country)}">${r.country || '—'}</span></td>
-      <td>${r.city || '—'}</td>
-      <td>${r.org  || '—'}</td>
-      <td>🕐 ${r.time || '—'}</td>
-    </tr>
-  `).join('');
+  users.forEach(u => {
+    const pcs = Object.values(data[u] || {});
+    totalPc += pcs.length;
+    pcs.forEach(p => {
+      if (p.country) countries.add(p.country);
+      if (p.lastSeen && p.lastSeen.startsWith(todayStr)) today++;
+    });
+  });
+
+  document.getElementById('cUser').textContent    = users.length;
+  document.getElementById('cPc').textContent      = totalPc;
+  document.getElementById('cCountry').textContent = countries.size;
+  document.getElementById('cToday').textContent   = today;
 }
 
-function renderEmpty() {
-  document.getElementById('tbody').innerHTML =
-    '<tr><td colspan="8" class="empty">No devices found yet.</td></tr>';
+function render() {
+  const q    = (document.getElementById('search').value || '').toLowerCase();
+  const wrap = document.getElementById('userList');
+
+  if (!data || !Object.keys(data).length) {
+    wrap.innerHTML = '<div class="empty">No login records yet.</div>';
+    return;
+  }
+
+  let html = '';
+  Object.entries(data).forEach(([user, pcs]) => {
+    const pcList = Object.values(pcs || {});
+    const filtered = pcList.filter(p =>
+      !q ||
+      (p.pcName||'').toLowerCase().includes(q) ||
+      (p.ip||'').toLowerCase().includes(q) ||
+      (p.country||'').toLowerCase().includes(q) ||
+      user.toLowerCase().includes(q)
+    );
+    if (!filtered.length) return;
+
+    const lastSeen = filtered.map(p=>p.lastSeen||'').sort().reverse()[0] || '—';
+
+    html += `
+    <div class="user-block">
+      <div class="user-header" onclick="toggle(this)">
+        <div class="user-avatar">👤</div>
+        <div>
+          <div class="user-name">${user}</div>
+          <div class="user-meta">Last login: ${lastSeen}</div>
+        </div>
+        <div class="pc-count">💻 ${filtered.length} PC</div>
+        <div class="chevron">▶</div>
+      </div>
+      <div class="pc-table">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>PC Name</th>
+              <th>Windows User</th>
+              <th>IP Address</th>
+              <th>Country</th>
+              <th>City</th>
+              <th>ISP</th>
+              <th>Last Seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filtered.map((p,i) => `
+              <tr>
+                <td>${i+1}</td>
+                <td>💻 ${p.pcName||'—'}</td>
+                <td>${p.windowsUser||'—'}</td>
+                <td>🌐 ${p.ip||'—'}</td>
+                <td><span class="badge ${badge(p.country)}">${p.country||'—'}</span></td>
+                <td>${p.city||'—'}</td>
+                <td>${p.org||'—'}</td>
+                <td>🕐 ${p.lastSeen||'—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  });
+
+  wrap.innerHTML = html || '<div class="empty">No results found.</div>';
 }
 
-function updateStats(rows) {
-  document.getElementById('totalCount').textContent   = rows.length;
-  document.getElementById('countryCount').textContent = new Set(rows.map(r => r.country)).size;
-  document.getElementById('uniqueIp').textContent     = new Set(rows.map(r => r.ip)).size;
-
-  const today = new Date().toISOString().slice(0, 10);
-  document.getElementById('todayCount').textContent =
-    rows.filter(r => r.time && r.time.startsWith(today)).length;
+function toggle(header) {
+  const table   = header.nextElementSibling;
+  const chevron = header.querySelector('.chevron');
+  const isOpen  = table.classList.contains('open');
+  table.classList.toggle('open', !isOpen);
+  chevron.classList.toggle('open', !isOpen);
 }
 
-function filterTable() {
-  const q = document.getElementById('search').value.toLowerCase();
-  const filtered = allRows.filter(r =>
-    (r.pcName   || '').toLowerCase().includes(q) ||
-    (r.ip       || '').toLowerCase().includes(q) ||
-    (r.country  || '').toLowerCase().includes(q) ||
-    (r.city     || '').toLowerCase().includes(q) ||
-    (r.userName || '').toLowerCase().includes(q)
-  );
-  renderTable(filtered);
+function badge(c) {
+  if (!c) return 'xx';
+  if (c==='BD') return 'bd';
+  if (c==='IN') return 'in';
+  if (c==='US') return 'us';
+  return 'xx';
 }
 
-function badgeClass(c) {
-  if (!c) return 'badge-def';
-  if (c === 'BD') return 'badge-bd';
-  if (c === 'IN') return 'badge-in';
-  if (c === 'US') return 'badge-us';
-  return 'badge-def';
-}
-
-// Auto-refresh every 30 seconds
-loadData();
-setInterval(loadData, 30000);
+load();
+setInterval(load, 30000);
 </script>
 </body>
 </html>

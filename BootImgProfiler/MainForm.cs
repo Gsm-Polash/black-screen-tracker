@@ -15,6 +15,8 @@ namespace BootImgProfiler
         private readonly TextBox _pathBox;
         private readonly Button _browseButton;
         private readonly Button _startButton;
+        private readonly TextBox _iomemBox;
+        private readonly Button _iomemBrowseButton;
         private readonly TextBox _output;
 
         public MainForm()
@@ -66,12 +68,41 @@ namespace BootImgProfiler
             };
             _startButton.Click += OnStart;
 
+            var iomemLabel = new Label
+            {
+                Text = "/proc/iomem\n(optional):",
+                Left = 12,
+                Top = 47,
+                Width = 50,
+                Height = 32,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
+            _iomemBox = new TextBox
+            {
+                Left = 66,
+                Top = 50,
+                Width = 452,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                ReadOnly = true
+            };
+
+            _iomemBrowseButton = new Button
+            {
+                Text = "Load .txt…",
+                Left = 524,
+                Top = 48,
+                Width = 100,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+            _iomemBrowseButton.Click += OnBrowseIomem;
+
             _output = new TextBox
             {
                 Left = 12,
-                Top = 84,
+                Top = 86,
                 Width = 732,
-                Height = 388,
+                Height = 386,
                 Multiline = true,
                 ReadOnly = true,
                 ScrollBars = ScrollBars.Both,
@@ -86,6 +117,9 @@ namespace BootImgProfiler
             Controls.Add(_pathBox);
             Controls.Add(_browseButton);
             Controls.Add(_startButton);
+            Controls.Add(iomemLabel);
+            Controls.Add(_iomemBox);
+            Controls.Add(_iomemBrowseButton);
             Controls.Add(_output);
         }
 
@@ -101,6 +135,17 @@ namespace BootImgProfiler
                     _startButton.Enabled = true;
                     _output.Clear();
                 }
+            }
+        }
+
+        private void OnBrowseIomem(object sender, EventArgs e)
+        {
+            using (var dlg = new OpenFileDialog())
+            {
+                dlg.Title = "Select a saved /proc/iomem text dump";
+                dlg.Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*";
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                    _iomemBox.Text = dlg.FileName;
             }
         }
 
@@ -204,6 +249,43 @@ namespace BootImgProfiler
                     sb.AppendLine();
                     sb.AppendLine("None of boot.img / vendor_boot.img / xbl_config.img " +
                                   "were found in this folder.");
+                }
+
+                // /proc/iomem dump, if provided, is authoritative and overrides
+                // whatever (placeholder) values the images produced.
+                if (!string.IsNullOrEmpty(_iomemBox.Text) && File.Exists(_iomemBox.Text))
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("[iomem] " + _iomemBox.Text);
+                    try
+                    {
+                        IomemResult iomem = IomemParser.Parse(_iomemBox.Text);
+                        if (iomem.SystemRamBase.HasValue)
+                        {
+                            chosenPhys = "0x" + iomem.SystemRamBase.Value.ToString("x8");
+                            chosenPhysFrom = "/proc/iomem: System RAM";
+                            sb.AppendLine("        System RAM  = " + chosenPhys);
+                        }
+                        else
+                        {
+                            sb.AppendLine("        System RAM  : not found in dump");
+                        }
+
+                        if (iomem.KernelCodeBase.HasValue)
+                        {
+                            chosenKernel = "0x" + iomem.KernelCodeBase.Value.ToString("x8");
+                            chosenKernelFrom = "/proc/iomem: Kernel code";
+                            sb.AppendLine("        Kernel code = " + chosenKernel);
+                        }
+                        else
+                        {
+                            sb.AppendLine("        Kernel code : not found in dump");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        sb.AppendLine("        parse failed: " + ex.Message);
+                    }
                 }
 
                 sb.AppendLine(new string('-', 68));

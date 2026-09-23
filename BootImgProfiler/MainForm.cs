@@ -125,12 +125,13 @@ namespace BootImgProfiler
                     : "";
 
                 sb.AppendLine("File            : " + path);
+                sb.AppendLine("Image kind      : " + info.ImageKind);
                 sb.AppendLine("Header version  : " + info.HeaderVersion);
                 sb.AppendLine("Page size       : " + info.PageSize);
                 sb.AppendLine();
                 sb.AppendLine("p0_kernel_phys_load : " +
                     (kernel != "" ? kernel : "(not available)"));
-                sb.AppendLine("    source          : boot header kernel_addr field");
+                sb.AppendLine("    source          : " + info.KernelSource);
                 sb.AppendLine();
                 sb.AppendLine("p0_phys_offset      : " +
                     (physOffset != "" ? physOffset : "(not available)"));

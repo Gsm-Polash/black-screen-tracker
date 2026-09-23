@@ -8,6 +8,10 @@ namespace BootImgProfiler
 {
     public sealed class MainForm : Form
     {
+        // Images searched inside the selected folder, in priority order.
+        private static readonly string[] TargetNames =
+            { "vendor_boot.img", "boot.img", "xbl_config.img" };
+
         private readonly TextBox _pathBox;
         private readonly Button _browseButton;
         private readonly Button _startButton;
@@ -16,36 +20,36 @@ namespace BootImgProfiler
         public MainForm()
         {
             Text = "Boot Image Profiler";
-            Width = 720;
-            Height = 480;
-            MinimumSize = new Size(560, 360);
+            Width = 760;
+            Height = 520;
+            MinimumSize = new Size(600, 380);
             Font = new Font("Segoe UI", 9f);
             StartPosition = FormStartPosition.CenterScreen;
 
             var pathLabel = new Label
             {
-                Text = "boot.img:",
+                Text = "Folder:",
                 Left = 12,
                 Top = 15,
-                Width = 60,
+                Width = 50,
                 TextAlign = ContentAlignment.MiddleLeft
             };
 
             _pathBox = new TextBox
             {
-                Left = 78,
+                Left = 66,
                 Top = 12,
-                Width = 500,
+                Width = 560,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 ReadOnly = true
             };
 
             _browseButton = new Button
             {
-                Text = "Select file…",
-                Left = 588,
+                Text = "Select folder…",
+                Left = 636,
                 Top = 10,
-                Width = 100,
+                Width = 108,
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
             };
             _browseButton.Click += OnBrowse;
@@ -53,9 +57,9 @@ namespace BootImgProfiler
             _startButton = new Button
             {
                 Text = "Start",
-                Left = 588,
+                Left = 636,
                 Top = 44,
-                Width = 100,
+                Width = 108,
                 Height = 30,
                 Anchor = AnchorStyles.Top | AnchorStyles.Right,
                 Enabled = false
@@ -66,8 +70,8 @@ namespace BootImgProfiler
             {
                 Left = 12,
                 Top = 84,
-                Width = 676,
-                Height = 344,
+                Width = 732,
+                Height = 388,
                 Multiline = true,
                 ReadOnly = true,
                 ScrollBars = ScrollBars.Both,
@@ -87,13 +91,13 @@ namespace BootImgProfiler
 
         private void OnBrowse(object sender, EventArgs e)
         {
-            using (var dlg = new OpenFileDialog())
+            using (var dlg = new FolderBrowserDialog())
             {
-                dlg.Title = "Select a boot image";
-                dlg.Filter = "Boot images (*.img)|*.img|All files (*.*)|*.*";
+                dlg.Description = "Select the folder that contains the .img files";
+                dlg.ShowNewFolderButton = false;
                 if (dlg.ShowDialog(this) == DialogResult.OK)
                 {
-                    _pathBox.Text = dlg.FileName;
+                    _pathBox.Text = dlg.SelectedPath;
                     _startButton.Enabled = true;
                     _output.Clear();
                 }
@@ -102,11 +106,11 @@ namespace BootImgProfiler
 
         private void OnStart(object sender, EventArgs e)
         {
-            string path = _pathBox.Text;
-            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            string folder = _pathBox.Text;
+            if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
             {
-                MessageBox.Show(this, "Please select a valid boot.img first.",
-                    "No file", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, "Please select a valid folder first.",
+                    "No folder", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -115,47 +119,121 @@ namespace BootImgProfiler
             var sb = new StringBuilder();
             try
             {
-                BootImageInfo info = BootImage.Analyze(path);
+                sb.AppendLine("Folder: " + folder);
+                sb.AppendLine(new string('-', 68));
 
-                string kernel = info.KernelPhysLoad != 0
-                    ? "0x" + info.KernelPhysLoad.ToString("x8")
-                    : "";
-                string physOffset = info.PhysOffset.HasValue
-                    ? "0x" + info.PhysOffset.Value.ToString("x8")
-                    : "";
+                string chosenKernel = "";
+                string chosenKernelFrom = "";
+                string chosenPhys = "";
+                string chosenPhysFrom = "";
+                int scanned = 0;
 
-                sb.AppendLine("File            : " + path);
-                sb.AppendLine("Image kind      : " + info.ImageKind);
-                sb.AppendLine("Header version  : " + info.HeaderVersion);
-                sb.AppendLine("Page size       : " + info.PageSize);
-                sb.AppendLine();
-                sb.AppendLine("p0_kernel_phys_load : " +
-                    (kernel != "" ? kernel : "(not available)"));
-                sb.AppendLine("    source          : " + info.KernelSource);
-                sb.AppendLine();
-                sb.AppendLine("p0_phys_offset      : " +
-                    (physOffset != "" ? physOffset : "(not available)"));
-                sb.AppendLine("    source          : " + info.PhysOffsetSource);
-
-                if (!string.IsNullOrEmpty(info.Notes))
+                foreach (string name in TargetNames)
                 {
+                    string full = FindFile(folder, name);
+                    if (full == null)
+                    {
+                        sb.AppendLine("[skip] " + name + " : not in folder");
+                        continue;
+                    }
+
+                    scanned++;
+                    BootImageInfo info;
+                    try
+                    {
+                        info = BootImage.Analyze(full);
+                    }
+                    catch (Exception ex)
+                    {
+                        sb.AppendLine("[err ] " + name + " : " + ex.Message);
+                        continue;
+                    }
+
+                    sb.AppendLine("[file] " + info.FileName +
+                                  "  (" + info.ImageKind + ", header v" + info.HeaderVersion + ")");
+
+                    // kernel
+                    if (info.HasKernelAddr)
+                    {
+                        string raw = "0x" + info.RawKernelAddr.ToString("x8");
+                        if (info.KernelIsAbsolute)
+                        {
+                            sb.AppendLine("        kernel_addr = " + raw + "  (absolute -> usable)");
+                            if (chosenKernel == "")
+                            {
+                                chosenKernel = raw;
+                                chosenKernelFrom = info.FileName + " " + info.KernelSource;
+                            }
+                        }
+                        else
+                        {
+                            sb.AppendLine("        kernel_addr = " + raw +
+                                          "  (offset placeholder, not an absolute load)");
+                        }
+                    }
+                    else
+                    {
+                        sb.AppendLine("        kernel_addr : " + info.KernelSource);
+                    }
+
+                    // phys_offset
+                    if (info.PhysOffset.HasValue)
+                    {
+                        string po = "0x" + info.PhysOffset.Value.ToString("x8");
+                        sb.AppendLine("        phys_offset = " + po +
+                                      "  (" + info.PhysOffsetSource + ")");
+                        if (chosenPhys == "")
+                        {
+                            chosenPhys = po;
+                            chosenPhysFrom = info.FileName;
+                        }
+                    }
+                    else
+                    {
+                        sb.AppendLine("        phys_offset : " + info.PhysOffsetSource);
+                    }
+
+                    if (!string.IsNullOrEmpty(info.Notes))
+                        sb.AppendLine("        note: " + info.Notes);
+
                     sb.AppendLine();
-                    sb.AppendLine("Note: " + info.Notes);
                 }
 
-                // Write profile.json next to the boot image.
-                string outPath = Path.Combine(
-                    Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".",
-                    "profile.json");
+                if (scanned == 0)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("None of boot.img / vendor_boot.img / xbl_config.img " +
+                                  "were found in this folder.");
+                }
+
+                sb.AppendLine(new string('-', 68));
+                sb.AppendLine("RESULT");
+                sb.AppendLine("  p0_kernel_phys_load = " +
+                    (chosenKernel != "" ? chosenKernel + "   [" + chosenKernelFrom + "]"
+                                        : "(not found in these images)"));
+                sb.AppendLine("  p0_phys_offset      = " +
+                    (chosenPhys != "" ? chosenPhys + "   [" + chosenPhysFrom + "]"
+                                      : "(not found in these images)"));
+
+                // Write profile.json into the selected folder.
+                string outPath = Path.Combine(folder, "profile.json");
                 string json =
                     "{" + Environment.NewLine +
-                    "  \"p0_phys_offset\": \"" + physOffset + "\"," + Environment.NewLine +
-                    "  \"p0_kernel_phys_load\": \"" + kernel + "\"" + Environment.NewLine +
+                    "  \"p0_phys_offset\": \"" + chosenPhys + "\"," + Environment.NewLine +
+                    "  \"p0_kernel_phys_load\": \"" + chosenKernel + "\"" + Environment.NewLine +
                     "}" + Environment.NewLine;
                 File.WriteAllText(outPath, json, new UTF8Encoding(false));
-
                 sb.AppendLine();
                 sb.AppendLine("Wrote: " + outPath);
+
+                if (chosenKernel == "" || chosenPhys == "")
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("Missing values are not stored in these images on GKI/" +
+                                  "Qualcomm devices. Get them from a rooted device:");
+                    sb.AppendLine("  adb shell su -c \"cat /proc/iomem\"");
+                    sb.AppendLine("  System RAM start -> phys_offset ; Kernel code start -> kernel_phys_load");
+                }
             }
             catch (Exception ex)
             {
@@ -167,6 +245,17 @@ namespace BootImgProfiler
                 Cursor = Cursors.Default;
                 _startButton.Enabled = true;
             }
+        }
+
+        // Case-insensitive lookup of a file name inside a folder.
+        private static string FindFile(string folder, string name)
+        {
+            string direct = Path.Combine(folder, name);
+            if (File.Exists(direct)) return direct;
+            foreach (string f in Directory.GetFiles(folder))
+                if (string.Equals(Path.GetFileName(f), name, StringComparison.OrdinalIgnoreCase))
+                    return f;
+            return null;
         }
     }
 }

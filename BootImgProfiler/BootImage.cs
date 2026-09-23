@@ -5,22 +5,25 @@ using System.Text;
 namespace BootImgProfiler
 {
     /// <summary>
-    /// Result of analysing an Android boot / vendor_boot image.
-    /// PhysOffset is nullable because it is NOT stored in any boot header and
-    /// can only be recovered when the image carries an embedded device tree (DTB).
+    /// Result of analysing one image file.
+    /// PhysOffset is nullable: it is never in a boot header and is only
+    /// recovered from an embedded device tree (DTB) whose /memory base is non-zero.
+    /// KernelPhysLoad is only trusted when it looks like an absolute physical
+    /// address; a small value such as 0x8000 is a legacy offset placeholder.
     /// </summary>
     public sealed class BootImageInfo
     {
-        public string ImageKind = "unknown"; // "boot" or "vendor_boot"
+        public string FileName = "";
+        public string ImageKind = "unknown";   // boot / vendor_boot / xbl_config / raw
         public uint HeaderVersion;
         public uint PageSize;
 
-        // Physical load address of the kernel (kernel_addr field).
-        public uint KernelPhysLoad;
-        public string KernelSource = "";
+        public bool HasKernelAddr;
+        public uint RawKernelAddr;
+        public bool KernelIsAbsolute;           // true => usable as kernel_phys_load
+        public string KernelSource = "n/a";
 
-        // Recovered from an embedded DTB /memory node, if present. Null otherwise.
-        public uint? PhysOffset;
+        public uint? PhysOffset;                // non-zero DTB /memory base, if any
         public string PhysOffsetSource = "not found";
 
         public string Notes = "";
@@ -28,107 +31,106 @@ namespace BootImgProfiler
 
     public static class BootImage
     {
-        private static readonly byte[] AndroidMagic =
-            Encoding.ASCII.GetBytes("ANDROID!"); // boot.img, offset 0
-        private static readonly byte[] VendorMagic =
-            Encoding.ASCII.GetBytes("VNDRBOOT"); // vendor_boot.img, offset 0
+        private static readonly byte[] AndroidMagic = Encoding.ASCII.GetBytes("ANDROID!");
+        private static readonly byte[] VendorMagic = Encoding.ASCII.GetBytes("VNDRBOOT");
+
+        // A kernel_addr at or above this is treated as an absolute physical load
+        // address; anything smaller (e.g. 0x8000) is a legacy offset placeholder.
+        private const uint AbsoluteKernelThreshold = 0x40000000;
 
         public static BootImageInfo Analyze(string path)
         {
             byte[] data = File.ReadAllBytes(path);
-            if (data.Length < 44)
-                throw new InvalidDataException("File is too small to be a boot image.");
+            var info = new BootImageInfo { FileName = Path.GetFileName(path) };
 
-            if (StartsWith(data, 0, VendorMagic))
-                return AnalyzeVendorBoot(data);
-            if (StartsWith(data, 0, AndroidMagic))
-                return AnalyzeBoot(data);
+            if (data.Length >= 44 && StartsWith(data, 0, VendorMagic))
+                AnalyzeVendorBoot(data, info);
+            else if (data.Length >= 44 && StartsWith(data, 0, AndroidMagic))
+                AnalyzeBoot(data, info);
+            else
+            {
+                // Unknown container (e.g. xbl_config.img). Best-effort DTB scan only.
+                info.ImageKind = "raw/xbl_config";
+                info.Notes = "No ANDROID!/VNDRBOOT magic; scanned for embedded DTB only " +
+                             "(this format is not otherwise parsed).";
+            }
 
-            throw new InvalidDataException(
-                "Neither \"ANDROID!\" nor \"VNDRBOOT\" magic found at offset 0. " +
-                "This is not a boot.img or vendor_boot.img.");
+            RecoverPhysOffset(data, info);
+            return info;
         }
 
-        // ---- boot.img (magic "ANDROID!") -------------------------------------
-        // Classic boot_img_hdr (v0..v2), little-endian:
-        //   0 magic[8] | 8 kernel_size | 12 kernel_addr | 16 ramdisk_size
-        //   20 ramdisk_addr | 24 second_size | 28 second_addr | 32 tags_addr
-        //   36 page_size | 40 header_version
-        // v3/v4 dropped the per-section addresses (GKI): no kernel_addr, no dtb.
-        private static BootImageInfo AnalyzeBoot(byte[] data)
+        // boot.img (v0..v2): 12 kernel_addr, 36 page_size, 40 header_version.
+        // v3/v4 (GKI): no addresses, no DTB.
+        private static void AnalyzeBoot(byte[] data, BootImageInfo info)
         {
-            var info = new BootImageInfo { ImageKind = "boot" };
+            info.ImageKind = "boot";
             info.PageSize = ReadU32LE(data, 36);
             info.HeaderVersion = ReadU32LE(data, 40);
 
             if (info.HeaderVersion >= 3)
             {
                 info.KernelSource = "not in header (v3/v4 GKI boot image)";
-                info.Notes =
-                    "This is a header v" + info.HeaderVersion + " boot image, which stores " +
-                    "no load addresses and no DTB. Use this device's vendor_boot.img " +
-                    "instead: its header holds kernel_addr and it carries the DTB.";
             }
             else
             {
-                info.KernelPhysLoad = ReadU32LE(data, 12);
+                info.HasKernelAddr = true;
+                info.RawKernelAddr = ReadU32LE(data, 12);
+                info.KernelIsAbsolute = info.RawKernelAddr >= AbsoluteKernelThreshold;
                 info.KernelSource = "boot header kernel_addr field";
             }
-
-            RecoverPhysOffset(data, info);
-            return info;
         }
 
-        // ---- vendor_boot.img (magic "VNDRBOOT") ------------------------------
-        // vendor_boot_img_hdr v3/v4, little-endian:
-        //   0 magic[8] | 8 header_version | 12 page_size | 16 kernel_addr
-        //   20 ramdisk_addr | 24 vendor_ramdisk_size | 28 cmdline[2048]
-        //   2076 tags_addr | 2080 name[16] | 2096 header_size
-        //   2100 dtb_size | 2104 dtb_addr(u64)
-        // The DTB is a separate page-aligned section; we locate it by scanning
-        // for the FDT magic, which is robust across v3/v4 layout differences.
-        private static BootImageInfo AnalyzeVendorBoot(byte[] data)
+        // vendor_boot.img (v3/v4): 8 header_version, 12 page_size, 16 kernel_addr.
+        private static void AnalyzeVendorBoot(byte[] data, BootImageInfo info)
         {
-            var info = new BootImageInfo { ImageKind = "vendor_boot" };
+            info.ImageKind = "vendor_boot";
             info.HeaderVersion = ReadU32LE(data, 8);
             info.PageSize = ReadU32LE(data, 12);
-            info.KernelPhysLoad = ReadU32LE(data, 16);
+            info.HasKernelAddr = true;
+            info.RawKernelAddr = ReadU32LE(data, 16);
+            info.KernelIsAbsolute = info.RawKernelAddr >= AbsoluteKernelThreshold;
             info.KernelSource = "vendor_boot header kernel_addr field";
-
-            RecoverPhysOffset(data, info);
-            return info;
         }
 
-        // phys_offset is never in a boot header. Recover it from an embedded FDT.
+        // Scan every embedded FDT and prefer a non-zero /memory base.
         private static void RecoverPhysOffset(byte[] data, BootImageInfo info)
         {
-            int fdtOffset = Fdt.FindMagic(data, 0);
-            if (fdtOffset < 0)
+            int search = 0;
+            int dtbCount = 0;
+            bool sawPlaceholder = false;
+
+            while (true)
             {
-                info.PhysOffsetSource =
-                    "no embedded DTB in this image; phys_offset must come from the " +
-                    "device tree / SoC memory map (try vendor_boot.img or dtb.img)";
-                return;
+                int fdt = Fdt.FindMagic(data, search);
+                if (fdt < 0) break;
+                dtbCount++;
+                try
+                {
+                    ulong? memBase = Fdt.ReadMemoryBase(data, fdt);
+                    if (memBase.HasValue)
+                    {
+                        uint low = (uint)(memBase.Value & 0xFFFFFFFFUL);
+                        if (low != 0)
+                        {
+                            info.PhysOffset = low;
+                            info.PhysOffsetSource =
+                                "DTB /memory base @ file offset 0x" + fdt.ToString("x");
+                            return;
+                        }
+                        sawPlaceholder = true;
+                    }
+                }
+                catch { /* skip malformed DTB, keep scanning */ }
+                search = fdt + 4;
             }
 
-            try
-            {
-                ulong? memBase = Fdt.ReadMemoryBase(data, fdtOffset);
-                if (memBase.HasValue)
-                {
-                    info.PhysOffset = (uint)(memBase.Value & 0xFFFFFFFFUL);
-                    info.PhysOffsetSource =
-                        "embedded DTB /memory node @ file offset 0x" + fdtOffset.ToString("x");
-                }
-                else
-                {
-                    info.PhysOffsetSource = "embedded DTB found but no readable /memory node";
-                }
-            }
-            catch (Exception ex)
-            {
-                info.PhysOffsetSource = "DTB parse failed: " + ex.Message;
-            }
+            if (dtbCount == 0)
+                info.PhysOffsetSource = "no embedded DTB";
+            else if (sawPlaceholder)
+                info.PhysOffsetSource =
+                    dtbCount + " DTB(s) found, all /memory reg = 0 (bootloader-filled placeholder)";
+            else
+                info.PhysOffsetSource = dtbCount + " DTB(s) found, no readable /memory node";
         }
 
         private static bool StartsWith(byte[] data, int offset, byte[] needle)
